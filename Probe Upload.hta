@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<!-- '^^^SUPER IMPORTANT: Allows pseudo classes to work -->
+
+
+<!-- 'Start of html code, top section, task bar name -->
+<html>
+<head>
+<title>Probe Upload</title>
+
+<!-- 'HTA application attributes, top line MUST be HTA:APPLICATION -->
+<HTA:APPLICATION
+		ID="objProbeUpload"
+		APPLICATIONNAME="Probe Upload"
+		SCROLL="no"
+		SINGLEINSTANCE="yes"
+		MAXIMIZEBUTTON="no"
+		MINIMIZEBUTTON="yes"
+		BORDER="DIALOG"
+		CONTEXTMENU="no"
+		ICON="Z:\IT\PW Tools\Resources\ProbeUpload48.ico"/>
+
+<!-- 'CSS styling -->
+<style>
+body {
+	background-color: black;
+	color: white;
+	font-family: courier;
+	font-size: 12px;
+	}	
+table, tr, td, th {
+	vertical-align: middle;
+	text-align: left;
+}
+button {
+	display: inline-block;
+	background-color: black;
+	cursor: pointer;
+	font-family: courier;
+	font-weight: bold;
+	color: white;
+	text-align: left;
+	text-decoration: none;
+	outline: none;
+	width: 200px;
+	border: 2px solid white;
+	padding: 1px 8px;
+	}	
+button:hover {
+	color: black;
+	font-weight: bold;
+	background-color: white;
+	}
+button.disabledbutton {
+	display: inline-block;
+	background-color: black;
+	cursor: not-allowed;
+	font-family: courier;
+	font-weight: bold;
+	color: gray;
+	text-align: left;
+	text-decoration: none;
+	outline: none;
+	width: 200px;
+	border: 2px solid gray;
+	padding: 1px 8px;
+	}
+button.disabledbutton:hover {
+	}
+</style>
+</head>
+
+<!-- 'Start of Visual Basic code -->
+<script language="VBScript">
+
+' Custom functions 
+' Converts milliseconds to hms
+FUNCTION MsToHMS(Ms)
+	Hrs = 0
+	Mins = 0
+	Secs = 0
+	Secs = Ms / 1000
+	Hrs = Int(Secs / 3600)
+	Secs = Secs - (Hrs * 3600)
+	Mins = Int(Secs / 60)
+	Secs = Secs - (Mins * 60)
+	MsToHMS = Hrs & "h " & Mins & "m " & Secs & "s"
+END FUNCTION 
+
+' Converts 01 string weekly schedule into mon tue string
+FUNCTION TextDayOfWeekSchedule(xyz)
+	i = 0
+	TextDayOfWeekSchedule = ""
+	DO WHILE i < 7 
+		i = i + 1
+		IF Mid(xyz,Weekday(i),1) = "1" THEN 
+			TextDayOfWeekSchedule = TextDayOfWeekSchedule & " " & WeekdayName(i,TRUE)
+		END IF 
+	LOOP 
+	LTrim(TextDayOfWeekSchedule)
+END FUNCTION
+
+' Constant variable defining debug mode
+CONST DebugMode = 0
+
+' Constant variables used by Outlook methods
+CONST olMailItem = 0
+CONST olFormatHTML = 2
+
+' Creating Wscript objects, retrieve User Name
+SET objShell = CreateObject("Wscript.Shell")
+SET objNetwork = CreateObject("Wscript.Network")
+strUserName = objNetwork.UserName
+
+' Create file system object needed to navigate files, set variables to orient script to its location
+SET objFSO = CreateObject("Scripting.FileSystemObject")
+strSelfLocation = document.location.href
+strSelfPath = REPLACE(RIGHT(strSelfLocation,LEN(strSelfLocation)-8),"/","\")
+strSelfPath = UNESCAPE(strSelfPath)
+strSelfFolder = objFSO.GetParentFolderName(strSelfPath)
+strPathBaseWriteData = strSelfFolder & "\Probe Data\Base SQL INSERT.txt"
+strPathWriteData = strSelfFolder & "\Probe Data\SQL INSERT.txt"
+strEmailCSS = strSelfFolder & "\Probe Data\CSS_Email.txt"
+strEmailTO = strSelfFolder & "\Probe Data\TO_Email.txt"
+
+' Interval variable
+idCounter = 0
+
+' Schedule
+' Each 0 or 1 represents a day of the week where 0 data is not collected and 1 data is collected
+' Example: 0111110 data is collected on the weekdays but NOT on Saturday or Sunday
+' Example: 0111111 data is collected on the weekdays and on Saturday but NOT on Sunday
+' Example: 1101111 data is collected on every day except for Tuesday
+DataCollect_DayOfWeekSchedule = "0111110"
+DataCollect_StartTime = "7:00 AM"
+DataCollect_EndTime = "3:30 PM"
+DataCollect_MinuteInterval = 10
+DataCollect_RecordNext = 0
+DataCollect_RecordLast = 0
+
+' Button variables 
+StartClass = ""
+EndClass = "disabled"
+StartText = "Start"
+EndText = "---"
+
+' Create internet explorer object
+SET objIE = CreateObject("InternetExplorer.Application")
+
+SUB MainMenu 
+	strHTML_Menu = "<p>USER: " & strUserName & "<br><table>" _
+	& "<tr><td><u>PROBE UPLOAD</u></td></tr>" _
+	& "<tr><td><button class='" & StartClass & "button' onclick='StartIE'>" & StartText & "</button></td></tr>" _
+	& "<tr><td><button class='" & EndClass & "button' onclick='EndIE'>" & EndText & "</button></td></tr>" _
+	& "</table>" _
+	& "<table>" _
+	& "<tr><td>Schedule: " & TextDayOfWeekSchedule(DataCollect_DayOfWeekSchedule) & "</td></tr>" _
+	& "<tr><td>Interval: " & DataCollect_MinuteInterval & " mins</td></tr>" _
+	& "</table>"
+	DataArea1.InnerHTML = strHTML_Menu
+END SUB 
+
+SUB StartIE
+	StartClass = "disabled"
+	StartText = "---"
+	EndClass = ""
+	EndText = "End"
+	MainMenu
+	NextRecordingTime
+	objIE.Navigate "http://192.168.1.220"
+	objIE.Navigate "http://192.168.1.220/pIndex?pgNo=1"
+	idCounter = window.setInterval("WaitForIELogin",200,"VBScript")
+END SUB 
+
+SUB WaitForIELogin 
+	IF objIE.ReadyState < 4 OR objIE.Busy THEN 
+	ELSE 
+		window.clearInterval(idCounter)
+		objIE.Document.getElementByID("lgPass").Value = "12345678"
+		objIE.Document.getElementByID("f").Submit
+		idCounter = window.setInterval("WaitForIEReadings",200,"VBScript")
+	END IF 
+END SUB 
+
+SUB WaitForIEReadings 
+	IF objIE.ReadyState < 4 OR objIE.Busy THEN 
+	ELSE 
+		window.clearInterval(idCounter)
+		CheckProbe
+		idCounter = window.setInterval("CheckTime",1000,"VBScript")
+	END IF 
+END SUB 
+
+SUB CheckTime 
+	IF Now() >= DataCollect_RecordNext THEN 
+		NextRecordingTime
+		window.clearInterval(idCounter)
+		idCounter = window.setInterval("WaitForIEReadings",200,"VBScript")
+	END IF 
+	DataArea2.InnerHTML = "<table><tr><td>Next: " & FormatDateTime(DataCollect_RecordNext,0) & "</td></tr></table>" _
+	& "<table><tr><td>Time: " & FormatDateTime(Now(),0) & "</td></tr></table>"
+END SUB 
+
+SUB EndIE 
+	StartClass = ""
+	StartText = "Start"
+	EndClass = "disabled"
+	EndText = "---"
+	MainMenu
+	ON ERROR RESUME NEXT 
+	objIE.quit
+	objIE.close
+	objIE = NOTHING
+	ON ERROR GOTO 0
+	SET objIE = CreateObject("InternetExplorer.Application")
+	window.clearInterval(idCounter)
+END SUB 
+
+SUB CheckProbe
+	RunExportToEmail = FALSE
+	IF Int(DataCollect_RecordLast) < Date() THEN 
+		RunExportToEmail = TRUE
+	END IF 
+	DataCollect_RecordLast = Now()
+	strHTML_Report = "<table><tr><td>Last: " & FormatDateTime(DataCollect_RecordLast,0) & "</td></tr></table>" _
+	& "<table>" _
+	& "<tr><th>Label</th><th>Reading</th></tr>" _
+	& "<tr><td>" & objIE.Document.getElementByID("lb0").innertext & "</td><td>" & Left(objIE.Document.getElementByID("rd0").innertext,Instr(objIE.Document.getElementByID("rd0").innertext," ")-1) & "</td></tr>" _
+	& "<tr><td>" & objIE.Document.getElementByID("lb1").innertext & "</td><td>" & Left(objIE.Document.getElementByID("rd1").innertext,Instr(objIE.Document.getElementByID("rd1").innertext," ")-1) & "</td></tr>" _
+	& "<tr><td>" & objIE.Document.getElementByID("lb2").innertext & "</td><td>" & Left(objIE.Document.getElementByID("rd2").innertext,Instr(objIE.Document.getElementByID("rd2").innertext," ")-1) & "</td></tr>" _
+	& "<tr><td>" & objIE.Document.getElementByID("lb3").innertext & "</td><td>" & Left(objIE.Document.getElementByID("rd3").innertext,Instr(objIE.Document.getElementByID("rd3").innertext," ")-1) & "</td></tr>" _
+	& "<tr><td>" & objIE.Document.getElementByID("lb4").innertext & "</td><td>" & Left(objIE.Document.getElementByID("rd4").innertext,Instr(objIE.Document.getElementByID("rd4").innertext," ")-1) & "</td></tr>" _
+	& "<tr><td>" & objIE.Document.getElementByID("lb5").innertext & "</td><td>" & Left(objIE.Document.getElementByID("rd5").innertext,Instr(objIE.Document.getElementByID("rd5").innertext," ")-1) & "</td></tr>" _
+	& "</table>"
+	DataArea3.InnerHTML = strHTML_Report
+	IF RunExportToEmail = TRUE THEN 
+		ExportToEmail
+	END IF 
+	strSQL_Report = "VALUES" _ 
+	& vbCrLf & "(" _
+	& "'" & Date() & " " & FormatDateTime(Now(),3) & "'" _
+	& ",'" & Left(objIE.Document.getElementByID("rd0").innertext,Instr(objIE.Document.getElementByID("rd0").innertext," ")-1) & "'" _
+	& ",'" & Left(objIE.Document.getElementByID("rd1").innertext,Instr(objIE.Document.getElementByID("rd1").innertext," ")-1) & "'" _
+	& ",'" & Left(objIE.Document.getElementByID("rd2").innertext,Instr(objIE.Document.getElementByID("rd2").innertext," ")-1) & "'" _
+	& ",'5'" _
+	& ",'" & Date() & " " & FormatDateTime(Now(),3) & "'" _
+	& ",'6'" _
+	& ",''" _
+	& ")" _
+	& vbCrLf & ",(" _
+	& "'" & Date() & " " & FormatDateTime(Now(),3) & "'" _
+	& ",'" & Left(objIE.Document.getElementByID("rd3").innertext,Instr(objIE.Document.getElementByID("rd3").innertext," ")-1) & "'" _
+	& ",'" & Left(objIE.Document.getElementByID("rd4").innertext,Instr(objIE.Document.getElementByID("rd4").innertext," ")-1) & "'" _
+	& ",'" & Left(objIE.Document.getElementByID("rd5").innertext,Instr(objIE.Document.getElementByID("rd5").innertext," ")-1) & "'" _
+	& ",'5'" _
+	& ",'" & Date() & " " & FormatDateTime(Now(),3) & "'" _
+	& ",'7'" _
+	& ",''" _
+	& ")"
+	objFSO.CopyFile strPathBaseWriteData,strPathWriteData,TRUE
+	SET objWriteData = objFSO.OpenTextFile(strPathWriteData,8,FALSE)
+	objWriteData.write strSQL_Report
+	objWriteData.close
+	ProbeQuery
+END SUB
+
+' Set next recording time
+SUB NextRecordingTime
+	i = Date() + CDate(DataCollect_StartTime)
+	DO WHILE Mid(DataCollect_DayOfWeekSchedule,Weekday(i),1) = "0"
+		i = i + 1
+	LOOP 
+	IF Now() >= Date() + CDate(DataCollect_EndTime) THEN
+		i = Date() + 1 + CDate(DataCollect_StartTime)
+		ELSE 
+		DO WHILE i <= Now()
+			i = i + ((DataCollect_MinuteInterval / 24) /60)
+		LOOP 
+	END IF 
+	DataCollect_RecordNext = i
+END SUB 
+
+' Set window size on load
+SUB window_onload
+	window.resizeTo 500, 600
+	MainMenu
+END SUB
+
+SUB window_onunload
+	ON ERROR RESUME NEXT 
+	objIE.quit
+	objIE.close
+	objIE = NOTHING
+	ON ERROR GOTO 0
+END SUB 
+
+SUB ProbeQuery
+	objShell.Run "wscript ""Z:\IT\PW Tools\SCRIPT Probe Query.vbs"""
+END SUB 
+
+SUB ExportToEmail 
+	' Create Outlook application object, then create new mail item
+	SET objOutlook = CreateObject("Outlook.Application")
+	SET objMail = objOutlook.CreateItem(olMailItem)
+	
+	' Pull CSS from CSS email file
+	SET ReadEmailCSS = objFSO.OpenTextFile(strEmailCSS,1,FALSE)
+	EmailCSS = ReadEmailCSS.ReadAll
+	ReadEmailCSS.close
+	
+	' Pull TO from to email file 
+	SET ReadEmailTO = objFSO.OpenTextFile(strEmailTO,1,FALSE)
+	EmailTO = ReadEmailTO.ReadAll 
+	ReadEmailTO.close
+	
+	' Create email, change body format to HTML, use CSS email file to style, paste html report into body, then send email
+	WITH objMail 
+		.To = EmailTO
+		.Subject = "Probe Upload"
+		.BodyFormat = olFormatHTML
+		.HTMLBody = "<html><style>" & EmailCSS & "</style>" & DataArea3.InnerHTML & "</html>"
+		.Send
+	END WITH 
+END SUB
+
+</script>
+<body>
+	<span id=DataArea1></span>
+	<span id=DataArea2></span>
+	<span id=DataArea3></span>
+</body>
+
+
